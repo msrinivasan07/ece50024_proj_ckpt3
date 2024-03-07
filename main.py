@@ -63,3 +63,79 @@ plt.grid(True)
 plt.legend()
 plt.savefig('toy_dataset_trajectory')
 plt.show()
+
+#We can also define a visualize function using this code to be reused later
+def visualize(true_y, pred_y=None):
+  fig = plt.figure(figsize=(6, 6), facecolor='white')
+  ax = fig.add_subplot(111)
+  ax.set_title('Toy Dataset')
+  ax.set_xlabel('x')
+  ax.set_ylabel('y')
+  ax.plot(true_y.cpu().numpy()[:, 0, 0], true_y.cpu().numpy()[:, 0, 1], 'green', label='true path')
+  ax.scatter(true_y.cpu().numpy()[:, 0, 0], true_y.cpu().numpy()[:, 0, 1], color='blue', label='samples', s=2)
+  if pred_y is not None:
+    ax.plot(pred_y.cpu().numpy()[:, 0, 0], pred_y.cpu().numpy()[:, 0, 1], 'red', label='learned path')
+  ax.set_xlim(-2.5, 2.5)
+  ax.set_ylim(-2.5, 2.5)
+  plt.legend()
+  plt.grid(True)
+  plt.show()
+
+#Now, we need to define the Neural ODE that we will use to train our model
+#In this case, we do not know the true dynamics of the state changes
+#So, we must represent the dynamics using a Neural Network
+# We aim to train this Neural Network using samples from our toy dataset and update its parameters. 
+class ODEFunc(nn.Module):
+  def __init__(self): #this is the implementation of actual ODE where forward function is a neural network
+    super().__init__()
+    #The input layer of the NN has 2 nodes because the toy dataset is 2-dimensional
+      # We create a hidden layer with 50 nodes and use tanh() activation function
+      #The output layer must have 2 nodes as well because we are trying to output the value at the next timestep (it will be 2 dimensional as well)
+    self.net = nn.Sequential(nn.Linear(2, 50),
+                             nn.Tanh(),
+                             nn.Linear(50, 2)) #architecture of the neural network
+    for m in self.net.modules():
+      if isinstance(m, nn.Linear):
+        nn.init.normal_(m.weight, mean=0, std=0.1) #random initilisation of NN weights from a normal distribution
+        nn.init.constant_(m.bias, val=0) #initialises bias for hidden layer with 0 value
+
+  def forward(self, t, y):
+    output = self.net(y) #forward propagates the input y through the nn
+    return output
+
+#Now, we extract batches from the generated toy spiral dataset to train the Neural ODE
+batch_time = 10
+batch_size = 16
+
+def get_batch():
+  s = torch.from_numpy(np.random.choice(np.arange(data_sz - batch_time, dtype=np.int64), batch_size, replace=False))
+  batch_y0 = true_y[s]  
+  batch_t = t[:batch_time] 
+  batch_y = torch.stack([true_y[s + i] for i in range(batch_time)], dim=0) 
+  return batch_y0.cuda(), batch_t.cuda(), batch_y.cuda()
+
+## Train
+niters = 400 #number of training epochs
+
+node = NeuralODE(func=ODEFunc()).cuda() #creates an object of the class NeuralODE with ODEFunc as the dynamics function
+optimizer = optim.RMSprop(node.parameters(), lr=1e-3) #RMSprop is used as the optimizer for training
+
+start_time = time.time() #to measure computation time
+
+for iter in tqdm(range(niters + 1)): #tqdm is simply used to create a progress bar for the iteration run
+  optimizer.zero_grad()
+  batch_y0, batch_t, batch_y = get_batch() #extracts a batch of data from the true_y values created
+  pred_y = node(y0=batch_y0, t=batch_t, solver=euler) #uses euler solver to forward propagate the batch through the node object
+  loss = torch.mean(torch.square(pred_y - batch_y)) #calculates the L2-norm loss
+  loss.backward() #backpropagates through the loss
+  optimizer.step() #updates the parameters of the defined NN in the NeuralODE class
+
+  if iter % 50 == 0:
+    with torch.no_grad(): #gradients are not calculated as this is used to simply visualize the status of training
+      pred_y = node(true_y0, t, solver=euler)
+      loss = torch.mean(torch.abs(pred_y - true_y))
+      print('Iter {:04d} | Total Loss {:.6f}'.format(iter, loss.item()))
+      visualize(true_y, pred_y)
+
+end_time = time.time() - start_time #calculates starting time - ending time
+print('process time: {} sec'.format(end_time))
