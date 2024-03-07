@@ -117,6 +117,12 @@ def get_batch():
 ## Train
 niters = 400 #number of training epochs
 
+## IMPORTANT NOTE: This code does not use the adjoint sensitivity method. We need to implement the adjoint sensitivity method.
+#This uses the backward() method in PyTorch to numerically calculate the gradients through autograd() and backward propagate through the entire network
+#The optimizer.step() method uses the calculated gradients to update the corresponding parameters in the neural network
+#It works well but we might need to show the adjoint sensitivity method for the checkpoint
+
+
 node = NeuralODE(func=ODEFunc()).cuda() #creates an object of the class NeuralODE with ODEFunc as the dynamics function
 optimizer = optim.RMSprop(node.parameters(), lr=1e-3) #RMSprop is used as the optimizer for training
 
