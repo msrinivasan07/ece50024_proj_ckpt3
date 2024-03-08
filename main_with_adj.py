@@ -128,11 +128,7 @@ def get_batch():
 ## Train
 niters = 400 #number of training epochs
 
-## IMPORTANT NOTE: This code does not use the adjoint sensitivity method. We need to implement the adjoint sensitivity method.
-#This uses the backward() method in PyTorch to numerically calculate the gradients through autograd() and backward propagate through the entire network
-#The optimizer.step() method uses the calculated gradients to update the corresponding parameters in the neural network
-#It works well but we might need to show the adjoint sensitivity method for the checkpoint
-
+#Here, we define the adjoint sensitivity approach to perform backpropagation through our Neural ODE architecture
 class ODEadjoint(torch.autograd.Function):
   def forward(ctx, t, y0, parameters, func):
     
@@ -140,7 +136,7 @@ class ODEadjoint(torch.autograd.Function):
       y = node(y0=true_y0, t=t, solver=euler)
 
     ctx.func = func #ctx is context parameter
-    ctx.save_for_backward(t, y, parameters)
+    ctx.save_for_backward(t, y, parameters) #ctx saves important values required for backprop
     
     return y
   
@@ -160,9 +156,9 @@ class ODEadjoint(torch.autograd.Function):
         t_ith = t_ith.detach().requires_grad(True)
         y_ith = y_ith.detach().requires_grad(True)  
 
-        output, adfdz, adfdt, adfdp = func.forward_with_grad(y_ith, t_ith, grad_outputs = a)
+        output, adfdz, adfdt, adfdp = func.forward_with_grad(y_ith, t_ith, grad_outputs = a) #we define all necessary gradients and the augmented dynamics state
 
-      return torch.cat((output,-adfdz, -adfdt, adfdp),dim=1)
+      return torch.cat((output,-adfdz, -adfdt, adfdp),dim=1) #we concatenate the augmented state and return it
     
     with torch.no_grad():
       adj_y = torch.zeros(bs, ndim).to(dLdy)
@@ -176,8 +172,8 @@ class ODEadjoint(torch.autograd.Function):
 
         dLdy_ith = dLdy[i]
 
-        a_t = torch.transpose(dLdy_ith)
-        dLdt_ith = -torch.bmm(a_t,func_ith)
+        a_t = torch.transpose(dLdy_ith) #we calculate a(t) as dL/dy
+        dLdt_ith = -torch.bmm(a_t,func_ith) #using chain rule, dL/dt is computed as a(t)*dy/dt
 
         adj_y += dLdy_ith
         adj_t[i] += dLdt_ith
