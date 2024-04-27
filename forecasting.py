@@ -14,6 +14,7 @@ data = pd.read_csv('/kaggle/input/covid-jhu/time_series_covid19_confirmed_global
 data.head()
 
 #In this example, we consider the US data
+#This was later modified to use the sum of all countries as the "global" dataset.
 us_data = data.loc[data['Country/Region']=='US']
 dates = us_data.columns[4:]
 
